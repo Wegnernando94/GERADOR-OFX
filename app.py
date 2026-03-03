@@ -204,7 +204,7 @@ def gerar_ofx():
     digito = request.args.get('digito', '0').strip()
     
     # Identificadores
-    acctid_valor = conta  # Usa o número da conta inserido
+    acctid_valor = f"{conta}{digito}"  # Concatena conta + dígito
     org_valor = banco['name']  # Usa o nome do banco
 
     # Data da OFX (se fornecida, converte; caso contrário usa agora)
