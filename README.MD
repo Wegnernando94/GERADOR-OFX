@@ -8,3 +8,7 @@ Ferramenta desenvolvida em Python/Flask para geração de arquivos OFX (extratos
    ```bash
    git clone [https://github.com/seu-usuario/gerador-ofx.git](https://github.com/seu-usuario/gerador-ofx.git)
    cd gerador-ofx
+
+2. **Executando:**
+   ```bash
+app.py
