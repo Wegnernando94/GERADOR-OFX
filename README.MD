@@ -11,4 +11,4 @@ Ferramenta desenvolvida em Python/Flask para geração de arquivos OFX (extratos
 
 2. **Executando:**
    ```bash
-app.py
+   app.py
