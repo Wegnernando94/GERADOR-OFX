@@ -203,9 +203,9 @@ def gerar_ofx():
     conta = request.args.get('conta', '83241').strip()
     digito = request.args.get('digito', '0').strip()
     
-    # Identificadores (Usando o CNPJ sem pontuação)
-    acctid_valor = cnpj_limpo if cnpj_limpo else f"{conta}{digito}"
-    org_valor = cnpj_limpo if cnpj_limpo else banco['name']
+    # Identificadores
+    acctid_valor = conta  # Usa o número da conta inserido
+    org_valor = banco['name']  # Usa o nome do banco
 
     # Data da OFX (se fornecida, converte; caso contrário usa agora)
     data_ofx_str = request.args.get('data_ofx', '').strip()
