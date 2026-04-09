@@ -1,9 +1,11 @@
-from flask import Flask, render_template_string, send_file, request
+from flask import Flask, render_template_string, send_file, request, jsonify
 import random
 import datetime
 import io
 import uuid
 import re
+import zipfile
+import json
 
 app = Flask(__name__)
 
@@ -129,93 +131,339 @@ HTML_LAYOUT = """
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #020617; }
         .card { background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .tab-btn { transition: all .2s; }
+        .tab-btn.active { border-bottom: 3px solid #22d3ee; color: #22d3ee; }
+        .tab-btn:not(.active) { border-bottom: 3px solid transparent; color: #64748b; }
+        #tab-lote { display: none; }
+        #tab-lote.active { display: block; }
+        #tab-simples { display: block; }
+        #tab-simples.active { display: block; }
+        #tab-simples:not(.active) { display: none; }
     </style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-6 text-white">
-    <div class="w-full max-w-lg card p-10 rounded-[2.5rem] shadow-2xl border-t-4 border-cyan-500">
-        <h1 class="text-2xl font-black mb-8 text-center text-cyan-400 uppercase tracking-tighter">
+    <div class="w-full max-w-2xl card p-8 rounded-[2.5rem] shadow-2xl border-t-4 border-cyan-500">
+        <h1 class="text-2xl font-black mb-6 text-center text-cyan-400 uppercase tracking-tighter">
             OFX Smart Generator
         </h1>
-        <form action="/gerar-ofx" method="GET" class="space-y-6">
-            <div class="p-4 bg-slate-900/50 rounded-2xl border border-slate-700">
+
+        <!-- Tabs -->
+        <div class="flex gap-6 mb-8 border-b border-slate-700 pb-1">
+            <button onclick="switchTab('simples')" id="btn-simples" class="tab-btn active text-sm font-bold uppercase tracking-widest pb-2 px-1">Geração Simples</button>
+            <button onclick="switchTab('lote')" id="btn-lote" class="tab-btn text-sm font-bold uppercase tracking-widest pb-2 px-1">Geração em Lote</button>
+        </div>
+
+        <!-- TAB 1: SIMPLES -->
+        <div id="tab-simples" class="active">
+            <form action="/gerar-ofx" method="GET" class="space-y-6">
+                <div class="p-4 bg-slate-900/50 rounded-2xl border border-slate-700">
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">CNPJ da Empresa Principal (Emissora)</label>
+                    <input type="text" name="cnpj_principal" placeholder="00.000.000/0001-00" value="19.943.789/0001-42" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 px-4 text-cyan-400 font-mono mb-4">
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Banco</label>
+                    <select name="banco_index" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 px-4 text-cyan-400 font-bold mb-4">
+                        {% for banco in bancos %}
+                        <option value="{{ loop.index0 }}">{{ banco.code }} - {{ banco.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="grid grid-cols-3 gap-3">
+                        <input type="text" name="agencia" placeholder="Agência" value="0001" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs">
+                        <input type="text" name="conta" value="83241" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs">
+                        <input type="text" name="digito" value="0" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4 p-4 bg-emerald-500/5 rounded-2xl border border-emerald-500/20">
+                    <div>
+                        <label class="block text-xs font-bold text-emerald-400 uppercase mb-2 text-center text-[10px]">Quantidade</label>
+                        <input type="number" name="qtd" value="10" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 text-xl font-black text-emerald-400 text-center">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-emerald-400 uppercase mb-2 text-center text-[10px]">Valor (Opcional)</label>
+                        <input type="text" name="valor_fixo" placeholder="Ex: 100.50" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 text-xl font-black text-emerald-400 text-center">
+                    </div>
+                </div>
+                <div class="p-4 bg-blue-500/5 rounded-2xl border border-blue-500/20">
+                    <label class="block text-[10px] font-bold text-blue-400 uppercase mb-2">Data da OFX (Opcional)</label>
+                    <input type="date" name="data_ofx" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 px-4 text-blue-400 font-mono">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <button type="submit" name="tipo_fluxo" value="DEBIT" class="bg-red-600 hover:bg-red-500 text-white font-black py-5 rounded-2xl uppercase shadow-lg shadow-red-900/20 transition-all active:scale-95">SÓ DÉBITO (-)</button>
+                    <button type="submit" name="tipo_fluxo" value="CREDIT" class="bg-emerald-600 hover:bg-emerald-500 text-white font-black py-5 rounded-2xl uppercase shadow-lg shadow-emerald-900/20 transition-all active:scale-95">SÓ CRÉDITO (+)</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- TAB 2: LOTE -->
+        <div id="tab-lote">
+            <!-- Configuração bancária -->
+            <div class="p-4 bg-slate-900/50 rounded-2xl border border-slate-700 mb-4">
                 <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">CNPJ da Empresa Principal (Emissora)</label>
-                <input type="text" name="cnpj_principal" placeholder="00.000.000/0001-00" value="19.943.789/0001-42" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 px-4 text-cyan-400 font-mono mb-4">
-                
+                <input type="text" id="l_cnpj" placeholder="00.000.000/0001-00" value="19.943.789/0001-42" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 px-4 text-cyan-400 font-mono mb-4">
                 <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Banco</label>
-                <select name="banco_index" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 px-4 text-cyan-400 font-bold mb-4">
+                <select id="l_banco" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 px-4 text-cyan-400 font-bold mb-4">
                     {% for banco in bancos %}
                     <option value="{{ loop.index0 }}">{{ banco.code }} - {{ banco.name }}</option>
                     {% endfor %}
                 </select>
                 <div class="grid grid-cols-3 gap-3">
-                    <input type="text" name="agencia" placeholder="Agência" value="0001" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs">
-                    <input type="text" name="conta" value="83241" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs">
-                    <input type="text" name="digito" value="0" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs">
-                </div>
-            </div>
-            
-            <div class="grid grid-cols-2 gap-4 p-4 bg-emerald-500/5 rounded-2xl border border-emerald-500/20">
-                <div>
-                    <label class="block text-xs font-bold text-emerald-400 uppercase mb-2 text-center text-[10px]">Quantidade</label>
-                    <input type="number" name="qtd" value="10" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 text-xl font-black text-emerald-400 text-center">
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-emerald-400 uppercase mb-2 text-center text-[10px]">Valor (Opcional)</label>
-                    <input type="text" name="valor_fixo" placeholder="Ex: 100.50" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 text-xl font-black text-emerald-400 text-center">
+                    <input type="text" id="l_agencia" placeholder="Agência" value="0001" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs text-cyan-400">
+                    <input type="text" id="l_conta" value="83241" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs text-cyan-400">
+                    <input type="text" id="l_digito" value="0" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs text-cyan-400">
                 </div>
             </div>
 
-            <div class="p-4 bg-blue-500/5 rounded-2xl border border-blue-500/20">
-                <label class="block text-[10px] font-bold text-blue-400 uppercase mb-2">Data da OFX (Opcional)</label>
-                <input type="date" name="data_ofx" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 px-4 text-blue-400 font-mono">
+            <!-- Geração por intervalo de datas -->
+            <div class="p-4 bg-blue-500/5 rounded-2xl border border-blue-500/20 mb-4">
+                <p class="text-[10px] font-bold text-blue-400 uppercase mb-3">Preencher grade por período</p>
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                        <label class="block text-[9px] text-slate-500 uppercase mb-1">Data Início</label>
+                        <input type="date" id="r_inicio" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-2 px-3 text-blue-400 font-mono text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-[9px] text-slate-500 uppercase mb-1">Data Fim</label>
+                        <input type="date" id="r_fim" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-2 px-3 text-blue-400 font-mono text-sm">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3 mb-4">
+                    <div>
+                        <label class="block text-[9px] text-slate-500 uppercase mb-1">Qtd transações/dia</label>
+                        <input type="number" id="r_qtd" value="10" min="1" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-2 px-3 text-emerald-400 font-black text-center text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-[9px] text-slate-500 uppercase mb-1">Valor padrão (opcional)</label>
+                        <input type="text" id="r_valor" placeholder="Livre" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-2 px-3 text-emerald-400 text-center text-sm">
+                    </div>
+                </div>
+
+                <!-- Regras de tipo por dia do mês -->
+                <div class="mb-3">
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="text-[9px] text-slate-400 uppercase font-bold">Regras de tipo por dia do mês</label>
+                        <button onclick="adicionarRegra()" class="text-[9px] text-cyan-400 hover:text-cyan-300 font-bold uppercase">+ Regra</button>
+                    </div>
+                    <div id="regras-lista" class="space-y-2"></div>
+                    <p id="regras-vazio" class="text-[9px] text-slate-600 italic">Sem regras → todos os dias ficam como Débito por padrão.</p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <button onclick="preencherGrade()" class="bg-blue-700 hover:bg-blue-600 text-white font-bold py-2 rounded-xl text-xs uppercase transition-all active:scale-95">Preencher Grade</button>
+                    <button onclick="randomizarValores()" class="bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 rounded-xl text-xs uppercase transition-all active:scale-95">Randomizar Valores</button>
+                </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-4">
-                <button type="submit" name="tipo_fluxo" value="DEBIT" class="bg-red-600 hover:bg-red-500 text-white font-black py-5 rounded-2xl uppercase shadow-lg shadow-red-900/20 transition-all active:scale-95">SÓ DÉBITO (-)</button>
-                <button type="submit" name="tipo_fluxo" value="CREDIT" class="bg-emerald-600 hover:bg-emerald-500 text-white font-black py-5 rounded-2xl uppercase shadow-lg shadow-emerald-900/20 transition-all active:scale-95">SÓ CRÉDITO (+)</button>
+            <!-- Adição manual de linha avulsa -->
+            <div class="p-4 bg-slate-800/60 rounded-2xl border border-slate-600 mb-4">
+                <p class="text-[10px] font-bold text-slate-400 uppercase mb-3">Adicionar item avulso</p>
+                <div class="grid grid-cols-4 gap-3 mb-3">
+                    <div class="col-span-2">
+                        <label class="block text-[9px] text-slate-500 uppercase mb-1">Data</label>
+                        <input type="date" id="i_data" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-2 px-3 text-blue-400 font-mono text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-[9px] text-slate-500 uppercase mb-1">Qtd</label>
+                        <input type="number" id="i_qtd" value="10" min="1" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-2 px-3 text-emerald-400 font-black text-center text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-[9px] text-slate-500 uppercase mb-1">Valor</label>
+                        <input type="text" id="i_valor" placeholder="Livre" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-2 px-3 text-emerald-400 text-center text-sm">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <button onclick="adicionarItem('DEBIT')" class="bg-red-700 hover:bg-red-600 text-white font-bold py-2 rounded-xl text-xs uppercase transition-all active:scale-95">+ Débito (-)</button>
+                    <button onclick="adicionarItem('CREDIT')" class="bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 rounded-xl text-xs uppercase transition-all active:scale-95">+ Crédito (+)</button>
+                </div>
             </div>
-        </form>
+
+            <!-- Grade do lote -->
+            <div class="flex items-center justify-between mb-2">
+                <p class="text-[10px] font-bold text-slate-400 uppercase">Grade do lote</p>
+                <button onclick="limparLote()" class="text-[9px] text-slate-600 hover:text-red-400 uppercase font-bold transition-colors">Limpar tudo</button>
+            </div>
+            <div id="lote-lista" class="space-y-1 mb-4 max-h-72 overflow-y-auto pr-1"></div>
+            <p id="lote-vazio" class="text-center text-slate-600 text-xs py-3 mb-3">Nenhum item na grade.</p>
+
+            <!-- Botões de ação -->
+            <button onclick="gerarLote()" class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-black py-5 rounded-2xl uppercase shadow-lg shadow-cyan-900/30 transition-all active:scale-95 text-sm tracking-widest">
+                Gerar OFXs (.zip)
+            </button>
+            <p id="lote-status" class="text-center text-xs mt-3 opacity-0"></p>
+        </div>
     </div>
+
+<script>
+    let lote = [];
+    let regras = [];
+
+    function switchTab(tab) {
+        document.getElementById('tab-lote').style.display = tab === 'lote' ? 'block' : 'none';
+        document.getElementById('tab-simples').style.display = tab === 'simples' ? 'block' : 'none';
+        document.getElementById('btn-simples').classList.toggle('active', tab === 'simples');
+        document.getElementById('btn-lote').classList.toggle('active', tab === 'lote');
+    }
+
+    // ── Regras de tipo por dia ───────────────────────────────────────────────
+    function adicionarRegra() {
+        regras.push({ diaInicio: 1, diaFim: 10, tipo: 'CREDIT' });
+        renderRegras();
+    }
+
+    function removerRegra(idx) { regras.splice(idx, 1); renderRegras(); }
+
+    function renderRegras() {
+        const el = document.getElementById('regras-lista');
+        const vz = document.getElementById('regras-vazio');
+        el.innerHTML = '';
+        vz.style.display = regras.length === 0 ? 'block' : 'none';
+        regras.forEach((r, idx) => {
+            el.innerHTML += `
+            <div class="flex items-center gap-2 text-xs">
+                <span class="text-slate-500 text-[9px]">Dias</span>
+                <input type="number" min="1" max="31" value="${r.diaInicio}" onchange="regras[${idx}].diaInicio=+this.value"
+                    class="w-12 bg-slate-900 border border-slate-700 rounded-lg py-1 text-center text-blue-300 font-mono text-xs">
+                <span class="text-slate-500 text-[9px]">a</span>
+                <input type="number" min="1" max="31" value="${r.diaFim}" onchange="regras[${idx}].diaFim=+this.value"
+                    class="w-12 bg-slate-900 border border-slate-700 rounded-lg py-1 text-center text-blue-300 font-mono text-xs">
+                <select onchange="regras[${idx}].tipo=this.value"
+                    class="flex-1 bg-slate-900 border border-slate-700 rounded-lg py-1 px-2 font-bold text-xs ${r.tipo==='CREDIT'?'text-emerald-400':'text-red-400'}">
+                    <option value="CREDIT" ${r.tipo==='CREDIT'?'selected':''}>CRÉDITO (+)</option>
+                    <option value="DEBIT"  ${r.tipo==='DEBIT' ?'selected':''}>DÉBITO (-)</option>
+                </select>
+                <button onclick="removerRegra(${idx})" class="text-slate-500 hover:text-red-400 text-base leading-none">&times;</button>
+            </div>`;
+        });
+    }
+
+    function tipoParaDia(dia) {
+        for (const r of regras) {
+            if (dia >= r.diaInicio && dia <= r.diaFim) return r.tipo;
+        }
+        return 'DEBIT';
+    }
+
+    // ── Preencher grade por período ──────────────────────────────────────────
+    function preencherGrade() {
+        const inicio = document.getElementById('r_inicio').value;
+        const fim    = document.getElementById('r_fim').value;
+        if (!inicio || !fim) { alert('Informe data início e fim.'); return; }
+        if (inicio > fim)    { alert('Data início deve ser anterior à data fim.'); return; }
+
+        const qtd   = parseInt(document.getElementById('r_qtd').value) || 10;
+        const vRaw  = document.getElementById('r_valor').value.replace(',', '.');
+        const valor = vRaw ? parseFloat(vRaw) : null;
+
+        let cur = new Date(inicio + 'T12:00:00');
+        const end = new Date(fim + 'T12:00:00');
+
+        while (cur <= end) {
+            const dataStr = cur.toISOString().slice(0, 10);
+            const dia = cur.getDate();
+            lote.push({ data: dataStr, tipo: tipoParaDia(dia), qtd, valor });
+            cur.setDate(cur.getDate() + 1);
+        }
+        renderLote();
+    }
+
+    // ── Randomizar valores na grade ──────────────────────────────────────────
+    function randomizarValores() {
+        if (lote.length === 0) return;
+        lote.forEach(item => {
+            item.valor = Math.round((100 + Math.random() * 900) * 100) / 100;
+        });
+        renderLote();
+    }
+
+    // ── Adição manual ────────────────────────────────────────────────────────
+    function adicionarItem(tipo) {
+        const data  = document.getElementById('i_data').value;
+        const qtd   = parseInt(document.getElementById('i_qtd').value) || 10;
+        const vRaw  = document.getElementById('i_valor').value.replace(',', '.');
+        const valor = vRaw ? parseFloat(vRaw) : null;
+        if (!data) { alert('Informe a data do item.'); return; }
+        lote.push({ data, tipo, qtd, valor });
+        renderLote();
+    }
+
+    function removerItem(idx) { lote.splice(idx, 1); renderLote(); }
+    function limparLote()     { lote = []; renderLote(); }
+
+    // ── Render grade ─────────────────────────────────────────────────────────
+    function renderLote() {
+        const lista = document.getElementById('lote-lista');
+        const vazio = document.getElementById('lote-vazio');
+        lista.innerHTML = '';
+        vazio.style.display = lote.length === 0 ? 'block' : 'none';
+
+        lote.forEach((item, idx) => {
+            const cor   = item.tipo === 'DEBIT' ? 'border-red-500/30 bg-red-500/5' : 'border-emerald-500/30 bg-emerald-500/5';
+            const badge = item.tipo === 'DEBIT'
+                ? '<span class="text-red-400 font-black text-[10px] w-14">DÉBITO</span>'
+                : '<span class="text-emerald-400 font-black text-[10px] w-14">CRÉDITO</span>';
+            const valorTxt = item.valor !== null
+                ? `<span class="text-emerald-300">R$ ${item.valor.toFixed(2)}</span>`
+                : '<span class="text-slate-600">Livre</span>';
+            lista.innerHTML += `
+                <div class="flex items-center justify-between py-2 px-3 rounded-xl border ${cor}">
+                    <div class="flex gap-3 items-center font-mono">
+                        ${badge}
+                        <span class="text-blue-300 text-[11px]">${item.data}</span>
+                        <span class="text-slate-500 text-[10px]">${item.qtd}x</span>
+                        ${valorTxt}
+                    </div>
+                    <button onclick="removerItem(${idx})" class="text-slate-600 hover:text-red-400 text-base leading-none ml-2 transition-colors">&times;</button>
+                </div>`;
+        });
+    }
+
+    // ── Gerar ZIP ────────────────────────────────────────────────────────────
+    async function gerarLote() {
+        if (lote.length === 0) { alert('A grade está vazia.'); return; }
+        const status = document.getElementById('lote-status');
+        status.textContent = 'Gerando...';
+        status.className = 'text-center text-xs mt-3 text-cyan-400';
+        status.style.opacity = '1';
+
+        const payload = {
+            cnpj_principal: document.getElementById('l_cnpj').value,
+            banco_index:    parseInt(document.getElementById('l_banco').value),
+            agencia:        document.getElementById('l_agencia').value,
+            conta:          document.getElementById('l_conta').value,
+            digito:         document.getElementById('l_digito').value,
+            lote
+        };
+
+        try {
+            const resp = await fetch('/gerar-ofx-lote', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!resp.ok) throw new Error();
+            const blob = await resp.blob();
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href = url; a.download = 'ofx_lote.zip'; a.click();
+            URL.revokeObjectURL(url);
+            status.textContent = `${lote.length} arquivo(s) gerado(s) com sucesso!`;
+            status.className = 'text-center text-xs mt-3 text-emerald-400';
+        } catch {
+            status.textContent = 'Erro ao gerar. Verifique o servidor.';
+            status.className = 'text-center text-xs mt-3 text-red-400';
+        }
+    }
+
+    renderLote();
+    renderRegras();
+</script>
 </body>
 </html>
 """
 
-@app.route('/')
-def index():
-    return render_template_string(HTML_LAYOUT, bancos=LISTA_BANCOS)
-
-@app.route('/gerar-ofx')
-def gerar_ofx():
-    # Parâmetros
-    idx = int(request.args.get('banco_index', 0))
-    banco = LISTA_BANCOS[idx]
-    tipo_fluxo = request.args.get('tipo_fluxo', 'DEBIT')
-    qtd = int(request.args.get('qtd', 10))
-    
-    # Captura e limpeza do CNPJ (remove qualquer caractere que não seja número)
-    cnpj_raw = request.args.get('cnpj_principal', '').strip()
-    cnpj_limpo = re.sub(r'\D', '', cnpj_raw) 
-    
-    valor_fixo_raw = request.args.get('valor_fixo', '').replace(',', '.')
-    valor_fixo = float(valor_fixo_raw) if valor_fixo_raw else None
-    
-    agencia = request.args.get('agencia', '0001').strip()
-    conta = request.args.get('conta', '83241').strip()
-    digito = request.args.get('digito', '0').strip()
-    
-    # Identificadores
-    acctid_valor = f"{conta}{digito}"  # Concatena conta + dígito
-    org_valor = banco['name']  # Usa o nome do banco
-
-    # Data da OFX (se fornecida, converte; caso contrário usa agora)
-    data_ofx_str = request.args.get('data_ofx', '').strip()
-    if data_ofx_str:
-        now = datetime.datetime.strptime(data_ofx_str, '%Y-%m-%d').replace(hour=23, minute=59, second=0)
-    else:
-        now = datetime.datetime.now()
+def _build_ofx(banco, cnpj_limpo, agencia, conta, digito, tipo_fluxo, qtd, valor_fixo, now):
+    acctid_valor = f"{conta}{digito}"
+    org_valor = banco['name']
     dt_server = now.strftime('%Y%m%d%H%M%S')
     trnuid = f"REQ-{uuid.uuid4().hex[:10].upper()}"
-    
+
     ofx_content = [
         "OFXHEADER:100", "DATA:OFXSGML", "VERSION:102", "SECURITY:NONE", "ENCODING:USASCII", "CHARSET:1252",
         "<OFX>", "  <SIGNONMSGSRSV1>", "    <SONRS>",
@@ -242,21 +490,13 @@ def gerar_ofx():
         f = random.choice(FORNECEDORES_MASSA)
         dt_post = (now - datetime.timedelta(minutes=i*2)).strftime('%Y%m%d%H%M%S')
         fitid = f"TRX{uuid.uuid4().hex[:14].upper()}"
-        
-        # Define o valor numérico
-        if valor_fixo is not None:
-            valor_calculado = valor_fixo
-        else:
-            valor_calculado = round(100 + random.random() * 500, 2)
-        
-        # FORMATAÇÃO FIXA: ".2f" garante 2 casas decimais (ex: 5.00 em vez de 5.0)
+        valor_calculado = valor_fixo if valor_fixo is not None else round(100 + random.random() * 500, 2)
         if tipo_fluxo == "DEBIT":
             valor_str = f"-{valor_calculado:.2f}"
             memo = f"PGTO {f['corporate_name']}"
         else:
             valor_str = f"{valor_calculado:.2f}"
             memo = f"REC {f['corporate_name']}"
-
         ofx_content.append("          <STMTTRN>")
         ofx_content.append(f"            <TRNTYPE>{tipo_fluxo}")
         ofx_content.append(f"            <DTPOSTED>{dt_post}")
@@ -267,18 +507,74 @@ def gerar_ofx():
         ofx_content.append("          </STMTTRN>")
 
     ofx_content.extend([
-        "        </BANKTRANLIST>", "        <LEDGERBAL>", 
+        "        </BANKTRANLIST>", "        <LEDGERBAL>",
         f"          <BALAMT>{random.randint(5000, 20000)}",
         f"          <DTASOF>{now.strftime('%Y%m%d235959')}", "        </LEDGERBAL>",
         "      </STMTRS>", "    </STMTTRNRS>", "  </BANKMSGSRSV1>", "</OFX>"
     ])
+    return "\n".join(ofx_content)
 
-    ofx_final = "\n".join(ofx_content)
+
+@app.route('/')
+def index():
+    return render_template_string(HTML_LAYOUT, bancos=LISTA_BANCOS)
+
+@app.route('/gerar-ofx')
+def gerar_ofx():
+    idx = int(request.args.get('banco_index', 0))
+    banco = LISTA_BANCOS[idx]
+    tipo_fluxo = request.args.get('tipo_fluxo', 'DEBIT')
+    qtd = int(request.args.get('qtd', 10))
+    cnpj_limpo = re.sub(r'\D', '', request.args.get('cnpj_principal', '').strip())
+    valor_fixo_raw = request.args.get('valor_fixo', '').replace(',', '.')
+    valor_fixo = float(valor_fixo_raw) if valor_fixo_raw else None
+    agencia = request.args.get('agencia', '0001').strip()
+    conta = request.args.get('conta', '83241').strip()
+    digito = request.args.get('digito', '0').strip()
+
+    data_ofx_str = request.args.get('data_ofx', '').strip()
+    if data_ofx_str:
+        now = datetime.datetime.strptime(data_ofx_str, '%Y-%m-%d').replace(hour=23, minute=59, second=0)
+    else:
+        now = datetime.datetime.now()
+
+    ofx_final = _build_ofx(banco, cnpj_limpo, agencia, conta, digito, tipo_fluxo, qtd, valor_fixo, now)
     mem_file = io.BytesIO()
     mem_file.write(ofx_final.encode('utf-8'))
     mem_file.seek(0)
-    
     return send_file(mem_file, as_attachment=True, download_name=f"extrato_{uuid.uuid4().hex[:4].upper()}.ofx", mimetype="text/plain")
+
+
+@app.route('/gerar-ofx-lote', methods=['POST'])
+def gerar_ofx_lote():
+    data = request.get_json()
+    idx = int(data.get('banco_index', 0))
+    banco = LISTA_BANCOS[idx]
+    cnpj_limpo = re.sub(r'\D', '', data.get('cnpj_principal', '').strip())
+    agencia = data.get('agencia', '0001').strip()
+    conta = data.get('conta', '83241').strip()
+    digito = data.get('digito', '0').strip()
+    lote = data.get('lote', [])
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for item in lote:
+            tipo_fluxo = item.get('tipo', 'DEBIT')
+            qtd = int(item.get('qtd', 10))
+            valor = item.get('valor')
+            valor_fixo = float(valor) if valor is not None else None
+            data_str = item.get('data', '')
+            if data_str:
+                now = datetime.datetime.strptime(data_str, '%Y-%m-%d').replace(hour=23, minute=59, second=0)
+            else:
+                now = datetime.datetime.now()
+
+            ofx_final = _build_ofx(banco, cnpj_limpo, agencia, conta, digito, tipo_fluxo, qtd, valor_fixo, now)
+            filename = f"extrato_{tipo_fluxo}_{now.strftime('%Y%m%d')}_{uuid.uuid4().hex[:4].upper()}.ofx"
+            zf.writestr(filename, ofx_final.encode('utf-8'))
+
+    zip_buffer.seek(0)
+    return send_file(zip_buffer, as_attachment=True, download_name='ofx_lote.zip', mimetype='application/zip')
 
 if __name__ == '__main__':
     app.run(debug=True, port=4000)
