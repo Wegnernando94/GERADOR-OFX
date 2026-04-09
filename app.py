@@ -210,7 +210,7 @@ def gerar_ofx():
     # Data da OFX (se fornecida, converte; caso contrário usa agora)
     data_ofx_str = request.args.get('data_ofx', '').strip()
     if data_ofx_str:
-        now = datetime.datetime.strptime(data_ofx_str, '%Y-%m-%d')
+        now = datetime.datetime.strptime(data_ofx_str, '%Y-%m-%d').replace(hour=23, minute=59, second=0)
     else:
         now = datetime.datetime.now()
     dt_server = now.strftime('%Y%m%d%H%M%S')
