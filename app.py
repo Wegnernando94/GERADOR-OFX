@@ -458,38 +458,50 @@ HTML_LAYOUT = """
 </html>
 """
 
-def _build_ofx(banco, cnpj_limpo, agencia, conta, digito, tipo_fluxo, qtd, valor_fixo, now):
-    acctid_valor = f"{conta}{digito}"
-    org_valor = banco['name']
-    dt_server = now.strftime('%Y%m%d%H%M%S')
-    trnuid = f"REQ-{uuid.uuid4().hex[:10].upper()}"
+def _build_ofx(banco, cnpj_limpo, agencia, conta, digito, tipo_fluxo, qtd, valor_fixo, now, tipo_conta='CHECKING'):
+    bankid_formatado = banco['code'].zfill(4)
+    acctid_valor = f"{agencia}{conta}{digito}"
+    dt_server = now.strftime('%Y%m%d%H%M%S[-03:EST]')
+    trnuid = "1001"
 
     ofx_content = [
-        "OFXHEADER:100", "DATA:OFXSGML", "VERSION:102", "SECURITY:NONE", "ENCODING:USASCII", "CHARSET:1252",
-        "<OFX>", "  <SIGNONMSGSRSV1>", "    <SONRS>",
-        "      <STATUS><CODE>0<SEVERITY>INFO</STATUS>",
-        f"      <DTSERVER>{dt_server}", "      <LANGUAGE>POR",
-        f"      <FI><ORG>{org_valor}<FID>{banco['code']}</FI>",
-        "    </SONRS>", "  </SIGNONMSGSRSV1>",
-        "  <BANKMSGSRSV1>", "    <STMTTRNRS>",
-        f"      <TRNUID>{trnuid}",
-        "      <STATUS><CODE>0<SEVERITY>INFO</STATUS>",
-        "      <STMTRS>", "        <CURDEF>BRL",
-        "        <BANKACCTFROM>",
-        f"          <BANKID>{banco['code']}",
-        f"          <BRANCHID>{agencia}",
-        f"          <ACCTID>{acctid_valor}",
-        "          <ACCTTYPE>CHECKING",
-        "        </BANKACCTFROM>",
-        "        <BANKTRANLIST>",
-        f"          <DTSTART>{now.strftime('%Y%m%d000000')}",
-        f"          <DTEND>{now.strftime('%Y%m%d235959')}"
+        "OFXHEADER:100", "DATA:OFXSGML", "VERSION:102", "SECURITY:NONE",
+        "ENCODING:USASCII", "CHARSET:1252", "COMPRESSION:NONE",
+        "OLDFILEUID:NONE", "NEWFILEUID:NONE",
+        "<OFX>",
+        "<SIGNONMSGSRSV1>",
+        "<SONRS>",
+        "<STATUS>",
+        "<CODE>0",
+        "<SEVERITY>INFO",
+        "</STATUS>",
+        f"<DTSERVER>{dt_server}",
+        "<LANGUAGE>POR",
+        "</SONRS>",
+        "</SIGNONMSGSRSV1>",
+        "<BANKMSGSRSV1>",
+        "<STMTTRNRS>",
+        f"<TRNUID>{trnuid}",
+        "<STATUS>",
+        "<CODE>0",
+        "<SEVERITY>INFO",
+        "</STATUS>",
+        "<STMTRS>",
+        "<CURDEF>BRL",
+        "<BANKACCTFROM>",
+        f"<BANKID>{bankid_formatado}",
+        f"<ACCTID>{acctid_valor}",
+        f"<ACCTTYPE>{tipo_conta}",
+        "</BANKACCTFROM>",
+        "<BANKTRANLIST>",
+        f"<DTSTART>{now.strftime('%Y%m%d000000[-03:EST]')}",
+        f"<DTEND>{now.strftime('%Y%m%d235959[-03:EST]')}"
     ]
 
     for i in range(qtd):
         f = random.choice(FORNECEDORES_MASSA)
-        dt_post = (now - datetime.timedelta(minutes=i*2)).strftime('%Y%m%d%H%M%S')
-        fitid = f"TRX{uuid.uuid4().hex[:14].upper()}"
+        dt_post = (now - datetime.timedelta(minutes=i*2)).strftime('%Y%m%d%H%M%S[-03:EST]')
+        fitid = f"{now.strftime('%Y%m%d')}{str(i+1).zfill(3)}"
         valor_calculado = valor_fixo if valor_fixo is not None else round(100 + random.random() * 500, 2)
         if tipo_fluxo == "DEBIT":
             valor_str = f"-{valor_calculado:.2f}"
@@ -497,20 +509,25 @@ def _build_ofx(banco, cnpj_limpo, agencia, conta, digito, tipo_fluxo, qtd, valor
         else:
             valor_str = f"{valor_calculado:.2f}"
             memo = f"REC {f['corporate_name']}"
-        ofx_content.append("          <STMTTRN>")
-        ofx_content.append(f"            <TRNTYPE>{tipo_fluxo}")
-        ofx_content.append(f"            <DTPOSTED>{dt_post}")
-        ofx_content.append(f"            <TRNAMT>{valor_str}")
-        ofx_content.append(f"            <FITID>{fitid}")
-        ofx_content.append(f"            <CHECKNUM>{random.randint(100000, 999999)}")
-        ofx_content.append(f"            <MEMO>{memo}")
-        ofx_content.append("          </STMTTRN>")
+        ofx_content.append("<STMTTRN>")
+        ofx_content.append(f"<TRNTYPE>{tipo_fluxo}")
+        ofx_content.append(f"<DTPOSTED>{dt_post}")
+        ofx_content.append(f"<TRNAMT>{valor_str}")
+        ofx_content.append(f"<FITID>{fitid}")
+        ofx_content.append(f"<CHECKNUM>{fitid}")
+        ofx_content.append(f"<MEMO>{memo}")
+        ofx_content.append("</STMTTRN>")
 
     ofx_content.extend([
-        "        </BANKTRANLIST>", "        <LEDGERBAL>",
-        f"          <BALAMT>{random.randint(5000, 20000)}",
-        f"          <DTASOF>{now.strftime('%Y%m%d235959')}", "        </LEDGERBAL>",
-        "      </STMTRS>", "    </STMTTRNRS>", "  </BANKMSGSRSV1>", "</OFX>"
+        "</BANKTRANLIST>",
+        "<LEDGERBAL>",
+        f"<BALAMT>{random.randint(5000, 20000)}.00",
+        f"<DTASOF>{now.strftime('%Y%m%d235959[-03:EST]')}",
+        "</LEDGERBAL>",
+        "</STMTRS>",
+        "</STMTTRNRS>",
+        "</BANKMSGSRSV1>",
+        "</OFX>"
     ])
     return "\n".join(ofx_content)
 
@@ -531,6 +548,7 @@ def gerar_ofx():
     agencia = request.args.get('agencia', '0001').strip()
     conta = request.args.get('conta', '83241').strip()
     digito = request.args.get('digito', '0').strip()
+    tipo_conta = request.args.get('tipo_conta', 'CHECKING').strip()
 
     data_ofx_str = request.args.get('data_ofx', '').strip()
     if data_ofx_str:
@@ -538,7 +556,7 @@ def gerar_ofx():
     else:
         now = datetime.datetime.now()
 
-    ofx_final = _build_ofx(banco, cnpj_limpo, agencia, conta, digito, tipo_fluxo, qtd, valor_fixo, now)
+    ofx_final = _build_ofx(banco, cnpj_limpo, agencia, conta, digito, tipo_fluxo, qtd, valor_fixo, now, tipo_conta)
     mem_file = io.BytesIO()
     mem_file.write(ofx_final.encode('utf-8'))
     mem_file.seek(0)
