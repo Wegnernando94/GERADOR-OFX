@@ -11,9 +11,14 @@ app = Flask(__name__)
 
 LISTA_BANCOS = [
     {"code": "341", "name": "ITAÚ UNIBANCO S.A."},
-    {"code": "616", "name": "MARVEL_DC_FINANCE"},
     {"code": "001", "name": "BANCO DO BRASIL S.A."},
-    {"code": "237", "name": "BANCO BRADESCO S.A."}
+    {"code": "237", "name": "BANCO BRADESCO S.A."},
+    {"code": "033", "name": "BANCO SANTANDER S.A."},
+    {"code": "104", "name": "CAIXA ECONOMICA FEDERAL"},
+    {"code": "260", "name": "NU PAGAMENTOS S.A."},
+    {"code": "077", "name": "BANCO INTER S.A."},
+    {"code": "756", "name": "BANCO COOPERATIVO SICREDI S.A."},
+    {"code": "748", "name": "BANCO COOPERATIVO DO BRASIL S.A. - BANCOOB"}
 ]
 
 # Lista de fornecedores para massa de dados
@@ -165,10 +170,30 @@ HTML_LAYOUT = """
                         <option value="{{ loop.index0 }}">{{ banco.code }} - {{ banco.name }}</option>
                         {% endfor %}
                     </select>
-                    <div class="grid grid-cols-3 gap-3">
-                        <input type="text" name="agencia" placeholder="Agência" value="0001" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs">
-                        <input type="text" name="conta" value="83241" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs">
-                        <input type="text" name="digito" value="0" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs">
+                    <div class="grid grid-cols-3 gap-3 mb-3">
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1 text-center">Agência (4)</label>
+                            <input type="text" name="agencia" placeholder="0001" value="0001" maxlength="4" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs text-cyan-400 font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1 text-center">Conta (5)</label>
+                            <input type="text" name="conta" value="83241" maxlength="5" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs text-cyan-400 font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1 text-center">Dígito (1)</label>
+                            <input type="text" name="digito" value="0" maxlength="1" class="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs text-cyan-400 font-mono">
+                        </div>
+                    </div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tipo de Conta</label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="flex items-center justify-center gap-2 cursor-pointer bg-slate-900 border border-cyan-600 rounded-xl py-3 px-4 text-cyan-400 font-bold text-xs has-[:checked]:bg-cyan-600/20">
+                            <input type="radio" name="tipo_conta" value="CHECKING" checked class="accent-cyan-500">
+                            Corrente (CHECKING)
+                        </label>
+                        <label class="flex items-center justify-center gap-2 cursor-pointer bg-slate-900 border border-slate-700 rounded-xl py-3 px-4 text-slate-400 font-bold text-xs has-[:checked]:bg-cyan-600/20 has-[:checked]:border-cyan-600 has-[:checked]:text-cyan-400">
+                            <input type="radio" name="tipo_conta" value="SAVINGS" class="accent-cyan-500">
+                            Poupança (SAVINGS)
+                        </label>
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-4 p-4 bg-emerald-500/5 rounded-2xl border border-emerald-500/20">
@@ -205,9 +230,9 @@ HTML_LAYOUT = """
                     {% endfor %}
                 </select>
                 <div class="grid grid-cols-3 gap-3 mb-3">
-                    <input type="text" id="l_agencia" placeholder="Agência" value="0001" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs text-cyan-400">
-                    <input type="text" id="l_conta" value="83241" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs text-cyan-400">
-                    <input type="text" id="l_digito" value="0" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs text-cyan-400">
+                    <input type="text" id="l_agencia" placeholder="Agência (4)" value="0001" maxlength="4" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs text-cyan-400 font-mono">
+                    <input type="text" id="l_conta" placeholder="Conta (5)" value="83241" maxlength="5" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs text-cyan-400 font-mono">
+                    <input type="text" id="l_digito" placeholder="Dígito" value="0" maxlength="1" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs text-cyan-400 font-mono">
                 </div>
                 <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tipo de Conta</label>
                 <div class="grid grid-cols-2 gap-3">
@@ -472,7 +497,10 @@ HTML_LAYOUT = """
 
 def _build_ofx(banco, cnpj_limpo, agencia, conta, digito, tipo_fluxo, qtd, valor_fixo, now, tipo_conta='CHECKING'):
     bankid_formatado = banco['code'].zfill(4)
-    acctid_valor = f"{agencia}{conta}{digito}"
+    if tipo_conta == 'SAVINGS':
+        acctid_valor = f"{agencia}9{conta}{digito}"
+    else:
+        acctid_valor = f"{agencia}{conta}{digito}"
     dt_server = now.strftime('%Y%m%d%H%M%S[-03:EST]')
     trnuid = "1001"
 
@@ -480,6 +508,7 @@ def _build_ofx(banco, cnpj_limpo, agencia, conta, digito, tipo_fluxo, qtd, valor
         "OFXHEADER:100", "DATA:OFXSGML", "VERSION:102", "SECURITY:NONE",
         "ENCODING:USASCII", "CHARSET:1252", "COMPRESSION:NONE",
         "OLDFILEUID:NONE", "NEWFILEUID:NONE",
+        "",
         "<OFX>",
         "<SIGNONMSGSRSV1>",
         "<SONRS>",
