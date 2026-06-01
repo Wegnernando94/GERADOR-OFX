@@ -204,10 +204,21 @@ HTML_LAYOUT = """
                     <option value="{{ loop.index0 }}">{{ banco.code }} - {{ banco.name }}</option>
                     {% endfor %}
                 </select>
-                <div class="grid grid-cols-3 gap-3">
+                <div class="grid grid-cols-3 gap-3 mb-3">
                     <input type="text" id="l_agencia" placeholder="Agência" value="0001" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs text-cyan-400">
                     <input type="text" id="l_conta" value="83241" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs text-cyan-400">
                     <input type="text" id="l_digito" value="0" class="bg-slate-900 border border-slate-700 rounded-xl py-3 text-center text-xs text-cyan-400">
+                </div>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tipo de Conta</label>
+                <div class="grid grid-cols-2 gap-3">
+                    <label class="flex items-center justify-center gap-2 cursor-pointer bg-slate-900 border border-cyan-600 rounded-xl py-3 px-4 text-cyan-400 font-bold text-xs has-[:checked]:bg-cyan-600/20">
+                        <input type="radio" name="l_tipo_conta" id="l_tipo_conta_checking" value="CHECKING" checked class="accent-cyan-500">
+                        Corrente (CHECKING)
+                    </label>
+                    <label class="flex items-center justify-center gap-2 cursor-pointer bg-slate-900 border border-slate-700 rounded-xl py-3 px-4 text-slate-400 font-bold text-xs has-[:checked]:bg-cyan-600/20 has-[:checked]:border-cyan-600 has-[:checked]:text-cyan-400">
+                        <input type="radio" name="l_tipo_conta" value="SAVINGS" class="accent-cyan-500">
+                        Poupança (SAVINGS)
+                    </label>
                 </div>
             </div>
 
@@ -428,6 +439,7 @@ HTML_LAYOUT = """
             agencia:        document.getElementById('l_agencia').value,
             conta:          document.getElementById('l_conta').value,
             digito:         document.getElementById('l_digito').value,
+            tipo_conta:     document.querySelector('input[name="l_tipo_conta"]:checked').value,
             lote
         };
 
@@ -572,6 +584,7 @@ def gerar_ofx_lote():
     agencia = data.get('agencia', '0001').strip()
     conta = data.get('conta', '83241').strip()
     digito = data.get('digito', '0').strip()
+    tipo_conta = data.get('tipo_conta', 'CHECKING').strip()
     lote = data.get('lote', [])
 
     zip_buffer = io.BytesIO()
@@ -587,7 +600,7 @@ def gerar_ofx_lote():
             else:
                 now = datetime.datetime.now()
 
-            ofx_final = _build_ofx(banco, cnpj_limpo, agencia, conta, digito, tipo_fluxo, qtd, valor_fixo, now)
+            ofx_final = _build_ofx(banco, cnpj_limpo, agencia, conta, digito, tipo_fluxo, qtd, valor_fixo, now, tipo_conta)
             filename = f"extrato_{tipo_fluxo}_{now.strftime('%Y%m%d')}_{uuid.uuid4().hex[:4].upper()}.ofx"
             zf.writestr(filename, ofx_final.encode('utf-8'))
 
