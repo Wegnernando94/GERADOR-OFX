@@ -642,6 +642,14 @@ def _build_ofx(banco, cnpj_limpo, agencia, conta, digito, tipo_fluxo, qtd, valor
     return "\n".join(ofx_content)
 
 
+def _parse_valor_br(valor_str):
+    valor_str = valor_str.strip()
+    if not valor_str:
+        return None
+    if ',' in valor_str:
+        valor_str = valor_str.replace('.', '').replace(',', '.')
+    return float(valor_str)
+
 @app.route('/')
 def index():
     return render_template_string(HTML_LAYOUT, bancos=LISTA_BANCOS)
@@ -653,8 +661,7 @@ def gerar_ofx():
     tipo_fluxo = request.args.get('tipo_fluxo', 'DEBIT')
     qtd = int(request.args.get('qtd', 10))
     cnpj_limpo = re.sub(r'\D', '', request.args.get('cnpj_principal', '').strip())
-    valor_fixo_raw = request.args.get('valor_fixo', '').replace(',', '.')
-    valor_fixo = float(valor_fixo_raw) if valor_fixo_raw else None
+    valor_fixo = _parse_valor_br(request.args.get('valor_fixo', ''))
     agencia = request.args.get('agencia', '0001').strip()
     conta = request.args.get('conta', '83241').strip()
     digito = request.args.get('digito', '0').strip()
@@ -680,8 +687,7 @@ def gerar_ofx_personalizado():
     tipo_fluxo = request.args.get('tipo_fluxo', 'DEBIT')
     qtd = int(request.args.get('qtd', 10))
     cnpj_limpo = re.sub(r'\D', '', request.args.get('cnpj_principal', '').strip())
-    valor_fixo_raw = request.args.get('valor_fixo', '').replace(',', '.')
-    valor_fixo = float(valor_fixo_raw) if valor_fixo_raw else None
+    valor_fixo = _parse_valor_br(request.args.get('valor_fixo', ''))
     agencia = request.args.get('agencia', '0001').strip()
     conta = request.args.get('conta', '83241').strip()
     digito = request.args.get('digito', '0').strip()
